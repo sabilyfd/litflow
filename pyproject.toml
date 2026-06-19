@@ -14,3 +14,15 @@ dependencies = [
   "gunicorn",
   "requests",
 ]
+
+# Pull torch from the CPU-only PyTorch index.
+# This gives a ~200 MB wheel instead of 500 MB + 1.5 GB of nvidia-* CUDA packages.
+# Required because surya-ocr depends on torch and we run SURYA_CPU_ONLY=true.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
