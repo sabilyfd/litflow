@@ -5,6 +5,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
+# Create a non-root user and group
+RUN groupadd -g 1000 appuser && useradd -u 1000 -g appuser -d /app -s /bin/sh appuser
+
 # Copy dependency manifest first for layer caching
 COPY pyproject.toml .
 
@@ -14,11 +17,17 @@ RUN uv sync --no-dev
 # Add virtualenv bin to PATH so gunicorn/celery are found
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Set ownership of /app to appuser
+RUN chown -R appuser:appuser /app
+
 
 # ── web: Flask + Gunicorn ─────────────────────────────────────────────────────
 FROM base AS web
 
 COPY web/ ./web/
+RUN chown -R appuser:appuser /app/web
+
+USER appuser
 
 EXPOSE 5000
 CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "web.app:app"]
@@ -35,9 +44,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY worker/ ./worker/
-
-# Worker needs db.py to update job status in SQLite
 COPY web/db.py ./web/db.py
 RUN touch ./web/__init__.py
+
+RUN chown -R appuser:appuser /app/worker /app/web
+
+# Create jobs dir and set ownership
+RUN mkdir -p /jobs && chown -R appuser:appuser /jobs
+
+USER appuser
 
 CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
