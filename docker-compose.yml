@@ -11,9 +11,10 @@ services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile.web
+      dockerfile: Dockerfile
+      target: web
     ports:
-      - "5594:5000"
+      - "5000:5000"
     env_file: .env
     volumes:
       - ./jobs:/jobs
@@ -25,7 +26,8 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.worker
+      dockerfile: Dockerfile
+      target: worker
     env_file: .env
     volumes:
       - ./jobs:/jobs
