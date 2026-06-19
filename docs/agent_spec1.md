@@ -1,6 +1,6 @@
-# Kitab Pipeline — Agent Build Spec
+# LitFlow — Agent Build Spec
 
-> **Project:** `kitab-pipeline`
+> **Project:** `LitFlow`
 > **Goal:** Web portal to upload scanned Islamic book PDFs → OCR → output `.txt` + `.html`
 > **Phase:** 1 (PDF → Text/HTML only. EPUB comes later.)
 > **Agent instruction:** Build skeleton only. No placeholder logic. Every module must be wired and functional.
@@ -12,7 +12,7 @@
 Create the following folder structure exactly:
 
 ```
-kitab-pipeline/
+./
 ├── web/
 │   ├── app.py                  # Flask app factory
 │   ├── auth.py                 # OIDC login/callback/logout, role check
