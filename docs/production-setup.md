@@ -1,6 +1,6 @@
 # Production Setup Guide
 
-This guide covers deploying LitFlow on a Linux server with Docker Compose, a reverse proxy (Caddy or Nginx), and TLS. It assumes you already have:
+This guide covers deploying LitFlow on a Linux server with Docker Compose, Nginx as a reverse proxy, and TLS via Certbot. It assumes you already have:
 
 - A Linux server (Ubuntu 22.04+ recommended)
 - A domain name pointing to the server's public IP
@@ -15,9 +15,9 @@ This guide covers deploying LitFlow on a Linux server with Docker Compose, a rev
 Internet
    │
    ▼
-[Caddy / Nginx]  ← TLS termination, reverse proxy
+[Nginx]  ← TLS termination, reverse proxy (host)
    │
-   ├──→ :5000  [LitFlow Web]  (Gunicorn, 2 workers)
+   ├──→ 127.0.0.1:5000  [LitFlow Web]  (Gunicorn, 2 workers)
    │
    └── internal Docker network
            │
@@ -116,40 +116,9 @@ litflow-worker-1  litflow-worker     Up
 
 ---
 
-## 5. Reverse Proxy Setup
+## 5. Nginx + Certbot Setup
 
-### Option A — Caddy (recommended, automatic TLS)
-
-Install Caddy:
-
-```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update && sudo apt install caddy
-```
-
-Edit `/etc/caddy/Caddyfile`:
-
-```caddyfile
-litflow.example.com {
-    reverse_proxy localhost:5000
-}
-```
-
-Reload Caddy:
-
-```bash
-sudo systemctl reload caddy
-```
-
-Caddy automatically provisions and renews a Let's Encrypt TLS certificate.
-
----
-
-### Option B — Nginx + Certbot
-
-Install:
+Install Nginx and Certbot on the host:
 
 ```bash
 sudo apt install -y nginx certbot python3-certbot-nginx
@@ -177,7 +146,7 @@ server {
 }
 ```
 
-Enable the site and obtain a certificate:
+Enable the site and obtain a TLS certificate:
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/litflow /etc/nginx/sites-enabled/
@@ -186,33 +155,33 @@ sudo systemctl reload nginx
 sudo certbot --nginx -d litflow.example.com
 ```
 
-Certbot auto-renews the certificate via a systemd timer.
+Certbot installs a systemd timer that auto-renews the certificate before it expires.
 
 ---
 
 ## 6. Firewall Rules
 
-Only expose ports 80 and 443. Docker port 5000 should not be directly reachable from the internet.
+Only expose ports 80 and 443. Port 5000 must not be reachable from the internet.
 
 ```bash
 sudo ufw allow 22/tcp    # SSH
-sudo ufw allow 80/tcp    # HTTP (redirect to HTTPS)
+sudo ufw allow 80/tcp    # HTTP (redirected to HTTPS by Certbot)
 sudo ufw allow 443/tcp   # HTTPS
 sudo ufw enable
 ```
 
-> If you used `ports: "5000:5000"` in `docker-compose.yml`, Docker bypasses UFW by default.
-> To restrict this, change the web service binding to `127.0.0.1:5000:5000` so it only listens on localhost.
+> Docker bypasses UFW by default when you publish a port with `ports: "5000:5000"`.  
+> Bind it to localhost only so only Nginx on the host can reach it.
 
 Edit `docker-compose.yml`:
 
 ```yaml
   web:
     ports:
-      - "127.0.0.1:5000:5000"   # localhost only — reverse proxy handles external traffic
+      - "127.0.0.1:5000:5000"   # localhost only
 ```
 
-Then restart:
+Then restart the web container:
 
 ```bash
 docker compose up -d web
@@ -367,16 +336,16 @@ Common causes:
 
 ### Upload fails with `413 Request Entity Too Large`
 
-Nginx's default `client_max_body_size` is 1 MB. Make sure the Nginx config includes:
+Nginx's default `client_max_body_size` is 1 MB. Confirm your site config at `/etc/nginx/sites-available/litflow` includes:
 
 ```nginx
 client_max_body_size 512M;
 ```
 
-Then reload Nginx:
+Then reload:
 
 ```bash
-sudo systemctl reload nginx
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ### Jobs stuck in `PROCESSING` forever
