@@ -119,8 +119,72 @@ def update_status(
         conn.commit()
 
 
+def increment_page_done(id: str) -> None:
+    """Atomically increment page_done by 1 and update updated_at.
+
+    Safe to call from concurrent page-level Celery tasks.
+    """
+    from datetime import datetime, timezone
+
+    updated_at = datetime.now(timezone.utc).isoformat()
+    with _get_conn() as conn:
+        conn.execute(
+            "UPDATE jobs SET page_done = page_done + 1, updated_at = ? WHERE id = ?",
+            (updated_at, id),
+        )
+        conn.commit()
+
+
+def get_page_artifacts(job_id: str) -> list[dict]:
+    """Return a list of page artifact dicts for a job.
+
+    Each dict has:
+      page_num  — 1-based page number
+      has_txt   — True if page_NNN.txt exists
+      has_html  — True if page_NNN.html exists
+      done      — True if both txt and html exist
+
+    Pages are returned in ascending page_num order.
+    """
+    import glob
+    import re
+
+    pages_dir = os.path.join(JOBS_DIR, job_id, "pages")
+    if not os.path.isdir(pages_dir):
+        return []
+
+    # Discover all page numbers from txt files (authoritative)
+    txt_paths = glob.glob(os.path.join(pages_dir, "page_*.txt"))
+    page_nums: set[int] = set()
+    for p in txt_paths:
+        m = re.search(r"page_(\d+)\.txt$", p)
+        if m:
+            page_nums.add(int(m.group(1)))
+
+    # Also discover from html files in case txt is missing
+    html_paths = glob.glob(os.path.join(pages_dir, "page_*.html"))
+    for p in html_paths:
+        m = re.search(r"page_(\d+)\.html$", p)
+        if m:
+            page_nums.add(int(m.group(1)))
+
+    results = []
+    for n in sorted(page_nums):
+        txt_exists = os.path.isfile(os.path.join(pages_dir, f"page_{n:03d}.txt"))
+        html_exists = os.path.isfile(os.path.join(pages_dir, f"page_{n:03d}.html"))
+        results.append(
+            {
+                "page_num": n,
+                "has_txt": txt_exists,
+                "has_html": html_exists,
+                "done": txt_exists and html_exists,
+            }
+        )
+    return results
+
+
 def cancel_job(id: str) -> bool:
-    """Mark a QUEUED or PROCESSING job as CANCELLED.
+    """Mark a QUEUED, SPLITTING, or PROCESSING job as CANCELLED.
 
     Returns True if a row was actually updated.
     """
@@ -132,7 +196,7 @@ def cancel_job(id: str) -> bool:
             """
             UPDATE jobs
                SET status = 'CANCELLED', updated_at = ?
-             WHERE id = ? AND status IN ('QUEUED', 'PROCESSING')
+             WHERE id = ? AND status IN ('QUEUED', 'SPLITTING', 'PROCESSING')
             """,
             (updated_at, id),
         )

@@ -15,9 +15,10 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
-    task_soft_time_limit=3600,   # 1 hour soft kill (raises SoftTimeLimitExceeded)
-    task_time_limit=7200,        # 2 hour hard kill
-    worker_prefetch_multiplier=1,  # process one job at a time (CPU OCR mode)
+    task_soft_time_limit=600,    # 10 min soft kill per page task
+    task_time_limit=900,         # 15 min hard kill per page task
+    task_track_started=True,     # required for chord fan-in correctness
+    worker_prefetch_multiplier=1,  # process one task at a time per worker process
     task_acks_late=True,           # ack after task completes, not before
     task_serializer="json",
     result_serializer="json",

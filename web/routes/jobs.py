@@ -14,7 +14,7 @@ from flask import (
 )
 
 from web.auth import login_required
-from web.db import cancel_job, delete_job, get_job
+from web.db import cancel_job, delete_job, get_job, get_page_artifacts
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -28,6 +28,7 @@ TERMINAL_STATUSES = {"DONE", "FAILED", "CANCELLED"}
 
 STATUS_COLORS = {
     "QUEUED": "gray",
+    "SPLITTING": "blue",
     "PROCESSING": "blue",
     "OCR_DONE": "indigo",
     "CLEANING": "yellow",
@@ -97,6 +98,73 @@ def download_html(job_id: str):
 
     path = os.path.join(JOBS_DIR, job_id, "output.html")
     return send_file(path, as_attachment=True, download_name=f"{job_id}.html")
+
+
+# ---------------------------------------------------------------------------
+# Per-page artifact API
+# ---------------------------------------------------------------------------
+
+@jobs_bp.route("/jobs/<job_id>/pages")
+@login_required
+def pages_status(job_id: str):
+    """JSON endpoint: returns per-page artifact availability.
+
+    Called by the job_status page via fetch() to update the per-page grid
+    without a full page reload.
+    """
+    from flask import jsonify
+    job = get_job(job_id)
+    if job is None:
+        abort(404)
+    _authorize_job(job)
+
+    pages = get_page_artifacts(job_id)
+    return jsonify({
+        "status": job["status"],
+        "page_total": job["page_total"],
+        "page_done": job["page_done"],
+        "pages": pages,
+    })
+
+
+@jobs_bp.route("/jobs/<job_id>/page/<int:page_num>/txt")
+@login_required
+def download_page_txt(job_id: str, page_num: int):
+    """Download the .txt artifact for a single page."""
+    job = get_job(job_id)
+    if job is None:
+        abort(404)
+    _authorize_job(job)
+
+    path = os.path.join(JOBS_DIR, job_id, "pages", f"page_{page_num:03d}.txt")
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=f"{job_id}_page{page_num:03d}.txt",
+        mimetype="text/plain",
+    )
+
+
+@jobs_bp.route("/jobs/<job_id>/page/<int:page_num>/html")
+@login_required
+def download_page_html(job_id: str, page_num: int):
+    """Download the .html artifact for a single page."""
+    job = get_job(job_id)
+    if job is None:
+        abort(404)
+    _authorize_job(job)
+
+    path = os.path.join(JOBS_DIR, job_id, "pages", f"page_{page_num:03d}.html")
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=f"{job_id}_page{page_num:03d}.html",
+        mimetype="text/html",
+    )
 
 
 @jobs_bp.route("/jobs/<job_id>/preview")

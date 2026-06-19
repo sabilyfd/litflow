@@ -54,4 +54,4 @@ RUN mkdir -p /jobs && chown -R appuser:appuser /jobs
 
 USER appuser
 
-CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+CMD ["sh", "-c", "celery -A worker.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-1}"]

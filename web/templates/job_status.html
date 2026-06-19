@@ -2,11 +2,87 @@
 {% block title %}Job {{ job.id[:8] }} — LitFlow{% endblock %}
 {% block meta_description %}OCR job status for {{ job.title or job.id }}.{% endblock %}
 
-{% if auto_refresh %}
 {% block extra_head %}
-<meta http-equiv="refresh" content="5">
+<style>
+  /* Per-page grid */
+  .page-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+  .page-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 0.75rem;
+    padding: 0.875rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    transition: border-color 0.25s, box-shadow 0.25s;
+  }
+  .page-card.done {
+    border-color: #1d4ed8;
+    box-shadow: 0 0 0 1px rgba(99,102,241,0.15);
+  }
+  .page-card.pending {
+    opacity: 0.55;
+  }
+  .page-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .page-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.04em;
+  }
+  .page-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+  }
+  .page-badge.done   { background:#1e3a5f; color:#60a5fa; }
+  .page-badge.wait   { background:#1c1c1c; color:#4b5563; }
+  .page-badge.spin   { background:#1c1c2e; color:#818cf8; }
+  .page-actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+  }
+  .dl-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.375rem;
+    border: 1px solid #334155;
+    background: #1e293b;
+    color: #cbd5e1;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .dl-btn:hover { background: #334155; border-color: #475569; color: #fff; }
+  .dl-btn svg { width: 0.85rem; height: 0.85rem; flex-shrink: 0; }
+
+  /* Spinner animation */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin-icon { animation: spin 1s linear infinite; }
+
+  /* Pulse skeleton */
+  @keyframes pulse-bg {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+  .skeleton { animation: pulse-bg 1.5s ease-in-out infinite; }
+</style>
 {% endblock %}
-{% endif %}
 
 {% block content %}
 <!-- Back link -->
@@ -19,7 +95,7 @@
   Back to dashboard
 </a>
 
-<div class="max-w-2xl">
+<div class="max-w-3xl">
   <!-- Title row -->
   <div class="flex items-start justify-between mb-6 gap-4">
     <div>
@@ -36,7 +112,8 @@
     </div>
 
     <!-- Status badge -->
-    <span class="shrink-0 mt-1 inline-flex items-center px-3 py-1.5 rounded-full text-sm
+    <span id="status-badge"
+          class="shrink-0 mt-1 inline-flex items-center px-3 py-1.5 rounded-full text-sm
                  font-semibold border
                  {% if color == 'green'  %}bg-green-900  text-green-300  border-green-700
                  {% elif color == 'blue'  %}bg-blue-900   text-blue-300   border-blue-700
@@ -51,37 +128,57 @@
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
         </svg>
       {% endif %}
-      {{ job.status }}
+      <span id="status-text">{{ job.status }}</span>
     </span>
   </div>
 
-  <!-- Progress bar -->
-  <div class="mb-8 bg-gray-900 rounded-xl p-5 border border-gray-800">
+  <!-- ── Progress section ────────────────────────────────────────────── -->
+  <div class="mb-6 bg-gray-900 rounded-xl p-5 border border-gray-800">
     <div class="flex justify-between items-center mb-2">
       <span class="text-sm text-gray-400 font-medium">Pages processed</span>
-      <span class="text-sm text-gray-200 font-semibold">
+      <span class="text-sm text-gray-200 font-semibold" id="progress-label">
         {{ job.page_done }} / {{ job.page_total or '?' }}
         {% if job.page_total %}({{ progress_pct }}%){% endif %}
       </span>
     </div>
     <div class="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
-      <div class="h-3 rounded-full transition-all duration-500
+      <div id="progress-bar"
+           class="h-3 rounded-full transition-all duration-500
                   {% if color == 'green' %}bg-green-500
                   {% elif color == 'red' %}bg-red-500
                   {% else %}bg-purple-500{% endif %}"
            style="width: {{ progress_pct }}%"></div>
     </div>
+
+    <!-- Per-page status grid — populated by JS -->
+    <div id="page-grid" class="page-grid">
+      {# Render skeleton placeholders from server-side data on initial load #}
+      {% if job.page_total and job.page_total > 0 %}
+        {% for n in range(1, job.page_total + 1) %}
+        <div class="page-card skeleton pending" id="page-card-{{ n }}">
+          <div class="page-card-header">
+            <span class="page-label">Page {{ n }}</span>
+            <span class="page-badge wait">waiting</span>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-xs text-gray-500 col-span-full mt-1">
+          Page breakdown will appear once splitting begins…
+        </p>
+      {% endif %}
+    </div>
   </div>
 
-  <!-- DONE: actions -->
-  {% if job.status == 'DONE' %}
-  <div class="bg-green-950 border border-green-800 rounded-xl p-5 mb-6">
+  <!-- ── DONE: final download actions ───────────────────────────────── -->
+  <div id="done-section" class="{% if job.status != 'DONE' %}hidden{% endif %}
+       bg-green-950 border border-green-800 rounded-xl p-5 mb-6">
     <h2 class="text-green-300 font-semibold mb-3 flex items-center gap-2">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21
              12a9 9 0 11-18 0 9 9 0 0118 0z"/>
       </svg>
-      OCR Complete
+      OCR Complete — Full Document
     </h2>
     <div class="flex flex-wrap gap-3">
       <a href="{{ url_for('jobs.download_txt', job_id=job.id) }}"
@@ -129,9 +226,8 @@
       </a>
     </div>
   </div>
-  {% endif %}
 
-  <!-- FAILED: error message + retry -->
+  <!-- FAILED: error message -->
   {% if job.status == 'FAILED' %}
   <div class="bg-red-950 border border-red-800 rounded-xl p-5 mb-6">
     <h2 class="text-red-300 font-semibold mb-2 flex items-center gap-2">
@@ -163,8 +259,8 @@
   </div>
   {% endif %}
 
-  <!-- Cancel action (QUEUED or PROCESSING) -->
-  {% if job.status in ('QUEUED', 'PROCESSING') %}
+  <!-- Cancel action -->
+  {% if job.status in ('QUEUED', 'SPLITTING', 'PROCESSING') %}
   <div class="mt-6 pt-5 border-t" style="border-color:#1f2937">
     <form action="{{ url_for('jobs.cancel', job_id=job.id) }}" method="POST"
           onsubmit="return confirm('Cancel this job?')">
@@ -181,7 +277,7 @@
   </div>
   {% endif %}
 
-  <!-- Delete action (FAILED or CANCELLED) -->
+  <!-- Delete action -->
   {% if job.status in ('FAILED', 'CANCELLED') %}
   <div class="mt-4 pt-4 border-t" style="border-color:#1f2937">
     <form action="{{ url_for('jobs.delete', job_id=job.id) }}" method="POST"
@@ -205,11 +301,160 @@
   </div>
   {% endif %}
 
-  <!-- Auto-refresh notice -->
-  {% if auto_refresh %}
-  <p class="text-xs text-center mt-6" style="color:#4b5563">
-    ⟳ Page auto-refreshes every 5 seconds until complete.
+  <p id="refresh-notice" class="text-xs text-center mt-6 {% if not auto_refresh %}hidden{% endif %}"
+     style="color:#4b5563">
+    ⟳ Updating every 4 seconds…
   </p>
-  {% endif %}
 </div>
+
+{# ── Live page-grid JS ──────────────────────────────────────────────────────── #}
+<script>
+(function () {
+  const JOB_ID      = {{ job.id | tojson }};
+  const PAGES_URL   = "/jobs/" + JOB_ID + "/pages";
+  const PAGE_DL_BASE = "/jobs/" + JOB_ID + "/page";
+  const TERMINAL    = new Set(["DONE", "FAILED", "CANCELLED"]);
+
+  // Icons (inline SVG strings)
+  const ICON_DL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round"
+      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021
+         18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+  </svg>`;
+
+  const ICON_SPIN = `<svg class="spin-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round"
+      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993
+         0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0
+         0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+  </svg>`;
+
+  function buildCard(page) {
+    const isDone = page.done;
+    const n      = page.page_num;
+
+    let badgeHtml, actionsHtml;
+
+    if (isDone) {
+      badgeHtml = `<span class="page-badge done">done</span>`;
+      actionsHtml = `
+        <div class="page-actions">
+          <a href="${PAGE_DL_BASE}/${n}/txt"  class="dl-btn" title="Download page ${n} text">
+            ${ICON_DL} .txt
+          </a>
+          <a href="${PAGE_DL_BASE}/${n}/html" class="dl-btn" title="Download page ${n} HTML">
+            ${ICON_DL} .html
+          </a>
+        </div>`;
+    } else {
+      badgeHtml   = `<span class="page-badge spin">${ICON_SPIN} processing</span>`;
+      actionsHtml = `<p class="text-xs" style="color:#4b5563">awaiting OCR…</p>`;
+    }
+
+    return `
+      <div class="page-card ${isDone ? 'done' : 'pending'}" id="page-card-${n}">
+        <div class="page-card-header">
+          <span class="page-label">Page ${n}</span>
+          ${badgeHtml}
+        </div>
+        ${actionsHtml}
+      </div>`;
+  }
+
+  function renderGrid(data) {
+    const grid = document.getElementById("page-grid");
+    if (!grid) return;
+
+    // Build a map from existing page nums so we can do incremental updates
+    const known = new Set(data.pages.map(p => p.page_num));
+
+    // If we have placeholder skeletons, replace them; otherwise append missing
+    if (data.pages.length > 0) {
+      // Render all returned pages
+      data.pages.forEach(page => {
+        const existing = document.getElementById("page-card-" + page.page_num);
+        const html     = buildCard(page);
+        if (existing) {
+          // Only replace if state changed (avoid flicker)
+          const wasDone = existing.classList.contains("done");
+          if (page.done !== wasDone) {
+            existing.outerHTML = html;
+          } else {
+            // Remove skeleton class once we have real data
+            existing.classList.remove("skeleton");
+          }
+        } else {
+          grid.insertAdjacentHTML("beforeend", html);
+        }
+      });
+
+      // Remove skeleton placeholders for pages not yet reported by server
+      grid.querySelectorAll(".skeleton").forEach(el => {
+        el.classList.remove("skeleton");
+      });
+    }
+  }
+
+  function updateProgressBar(data) {
+    const total = data.page_total || 0;
+    const done  = data.page_done  || 0;
+    const pct   = total > 0 ? Math.round(done / total * 100) : 0;
+
+    const label = document.getElementById("progress-label");
+    const bar   = document.getElementById("progress-bar");
+    if (label) label.textContent = `${done} / ${total || "?"} (${pct}%)`;
+    if (bar)   bar.style.width   = pct + "%";
+  }
+
+  function showDoneSection() {
+    const sec = document.getElementById("done-section");
+    if (sec) sec.classList.remove("hidden");
+  }
+
+  let stopped = false;
+  const TERMINAL_STATUSES = ["DONE", "FAILED", "CANCELLED"];
+
+  async function poll() {
+    if (stopped) return;
+    try {
+      const resp = await fetch(PAGES_URL, { credentials: "same-origin" });
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      updateProgressBar(data);
+      renderGrid(data);
+
+      // Update status text
+      const txt = document.getElementById("status-text");
+      if (txt) txt.textContent = data.status;
+
+      if (data.status === "DONE") showDoneSection();
+
+      if (TERMINAL_STATUSES.includes(data.status)) {
+        stopped = true;
+        const notice = document.getElementById("refresh-notice");
+        if (notice) notice.classList.add("hidden");
+        // Reload to show correct action buttons (delete / cancel gone)
+        setTimeout(() => window.location.reload(), 800);
+        return;
+      }
+    } catch (e) {
+      // Network error — keep polling
+    }
+    setTimeout(poll, 4000);
+  }
+
+  // Start polling immediately unless already terminal
+  const initialStatus = {{ job.status | tojson }};
+  if (!TERMINAL_STATUSES.includes(initialStatus)) {
+    poll();
+  } else {
+    // Still render grid from server data if terminal
+    fetch(PAGES_URL, { credentials: "same-origin" })
+      .then(r => r.json())
+      .then(data => { renderGrid(data); updateProgressBar(data); })
+      .catch(() => {});
+  }
+})();
+</script>
 {% endblock %}

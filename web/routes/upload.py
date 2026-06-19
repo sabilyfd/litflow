@@ -109,6 +109,6 @@ def upload_file():
     )
 
     # Enqueue Celery task by name — no worker module import required
-    _celery.send_task("worker.tasks.run_pipeline", args=[job_id])
+    _celery.send_task("worker.tasks.split_pdf", args=[job_id])
 
     return redirect(url_for("jobs.job_status", job_id=job_id))
