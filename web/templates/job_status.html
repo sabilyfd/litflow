@@ -150,9 +150,64 @@
   </div>
   {% endif %}
 
+  <!-- CANCELLED notice -->
+  {% if job.status == 'CANCELLED' %}
+  <div class="rounded-xl p-5 mb-6 border" style="background:#1f2937;border-color:#374151">
+    <h2 class="font-semibold mb-1 flex items-center gap-2" style="color:#9ca3af">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+      Job Cancelled
+    </h2>
+    <p class="text-sm" style="color:#6b7280">This job was cancelled before it completed.</p>
+  </div>
+  {% endif %}
+
+  <!-- Cancel action (QUEUED or PROCESSING) -->
+  {% if job.status in ('QUEUED', 'PROCESSING') %}
+  <div class="mt-6 pt-5 border-t" style="border-color:#1f2937">
+    <form action="{{ url_for('jobs.cancel', job_id=job.id) }}" method="POST"
+          onsubmit="return confirm('Cancel this job?')">
+      <button type="submit" id="cancel-btn"
+              class="inline-flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg border transition-colors"
+              style="background:#1f2937;border-color:#374151;color:#f87171"
+              onmouseover="this.style.background='#3b0000'" onmouseout="this.style.background='#1f2937'">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+        Cancel Job
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
+  <!-- Delete action (FAILED or CANCELLED) -->
+  {% if job.status in ('FAILED', 'CANCELLED') %}
+  <div class="mt-4 pt-4 border-t" style="border-color:#1f2937">
+    <form action="{{ url_for('jobs.delete', job_id=job.id) }}" method="POST"
+          onsubmit="return confirm('Permanently delete this job and all its files?')">
+      <button type="submit" id="delete-btn"
+              class="inline-flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg border transition-colors"
+              style="background:#3b0000;border-color:#dc2626;color:#fca5a5"
+              onmouseover="this.style.background='#7f1d1d'" onmouseout="this.style.background='#3b0000'">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16
+                   19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456
+                   0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0
+                   0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964
+                   51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667
+                   48.667 0 00-7.5 0"/>
+        </svg>
+        Delete Job &amp; Files
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
   <!-- Auto-refresh notice -->
   {% if auto_refresh %}
-  <p class="text-xs text-gray-600 text-center">
+  <p class="text-xs text-center mt-6" style="color:#4b5563">
     ⟳ Page auto-refreshes every 5 seconds until complete.
   </p>
   {% endif %}

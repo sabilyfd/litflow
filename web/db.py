@@ -117,3 +117,49 @@ def update_status(
             values,
         )
         conn.commit()
+
+
+def cancel_job(id: str) -> bool:
+    """Mark a QUEUED or PROCESSING job as CANCELLED.
+
+    Returns True if a row was actually updated.
+    """
+    from datetime import datetime, timezone
+
+    updated_at = datetime.now(timezone.utc).isoformat()
+    with _get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE jobs
+               SET status = 'CANCELLED', updated_at = ?
+             WHERE id = ? AND status IN ('QUEUED', 'PROCESSING')
+            """,
+            (updated_at, id),
+        )
+        conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_job(id: str) -> bool:
+    """Delete a FAILED or CANCELLED job row from the DB and remove its files.
+
+    Returns True if a row was actually deleted.
+    """
+    import shutil
+
+    with _get_conn() as conn:
+        cur = conn.execute(
+            """
+            DELETE FROM jobs
+             WHERE id = ? AND status IN ('FAILED', 'CANCELLED')
+            """,
+            (id,),
+        )
+        conn.commit()
+
+    if cur.rowcount > 0:
+        job_dir = os.path.join(JOBS_DIR, id)
+        if os.path.isdir(job_dir):
+            shutil.rmtree(job_dir, ignore_errors=True)
+        return True
+    return False
