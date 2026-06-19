@@ -8,16 +8,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Tell uv to install into the system Python (replaces deprecated --system flag)
-ENV UV_SYSTEM_PYTHON=1
-
 WORKDIR /app
 
 # Copy dependency manifest first for layer caching
 COPY pyproject.toml .
 
-# Sync dependencies (no dev deps)
+# Sync dependencies into .venv (default uv behaviour)
 RUN uv sync --no-dev
+
+# Add the virtualenv's bin dir to PATH so celery is found
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy worker package
 COPY worker/ ./worker/
