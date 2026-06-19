@@ -24,12 +24,18 @@ RUN chown -R appuser:appuser /app
 # ── web: Flask + Gunicorn ─────────────────────────────────────────────────────
 FROM base AS web
 
+# su-exec: tiny helper to drop privileges after chown-ing /jobs as root
+RUN apt-get update && apt-get install -y --no-install-recommends su-exec \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY web/ ./web/
-RUN chown -R appuser:appuser /app/web
+COPY docker/web-entrypoint.sh /usr/local/bin/web-entrypoint.sh
+RUN chown -R appuser:appuser /app/web \
+    && chmod +x /usr/local/bin/web-entrypoint.sh
 
-USER appuser
-
+# Stay as root so the entrypoint can chown /jobs, then drops to appuser
 EXPOSE 5000
+ENTRYPOINT ["web-entrypoint.sh"]
 CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "web.app:app"]
 
 
