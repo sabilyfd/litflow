@@ -10,6 +10,7 @@ dependencies = [
   "redis",
   "python-dotenv",
   "surya-ocr==0.6.13",
+  "transformers<4.45.0",
   "pdf2image",
   "gunicorn",
   "requests",
