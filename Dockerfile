@@ -24,8 +24,8 @@ RUN chown -R appuser:appuser /app
 # ── web: Flask + Gunicorn ─────────────────────────────────────────────────────
 FROM base AS web
 
-# su-exec: tiny helper to drop privileges after chown-ing /jobs as root
-RUN apt-get update && apt-get install -y --no-install-recommends su-exec \
+# gosu: tiny helper to drop privileges after chown-ing /jobs as root
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY web/ ./web/

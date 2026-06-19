@@ -4,4 +4,4 @@
 set -e
 mkdir -p /jobs
 chown -R appuser:appuser /jobs
-exec su-exec appuser "$@"
+exec gosu appuser "$@"
