@@ -13,6 +13,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: web
+      network: host
     ports:
       - "5000:5000"
     env_file: .env
@@ -28,6 +29,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: worker
+      network: host
     env_file: .env
     volumes:
       - ./jobs:/jobs
