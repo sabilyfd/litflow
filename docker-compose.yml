@@ -13,7 +13,7 @@ services:
       context: .
       dockerfile: Dockerfile.web
     ports:
-      - "5000:5000"
+      - "5594:5000"
     env_file: .env
     volumes:
       - ./jobs:/jobs
