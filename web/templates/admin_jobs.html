@@ -45,13 +45,11 @@
           </span>
         </td>
         <td class="px-6 py-4">
-          {% set status_colors = {
-              'QUEUED': 'gray', 'PROCESSING': 'blue', 'OCR_DONE': 'indigo',
-              'CLEANING': 'yellow', 'DONE': 'green', 'FAILED': 'red'
-          } %}
-          {% set color = status_colors.get(job.status, 'gray') %}
-          <span class="bg-{{ color }}-900 text-{{ color }}-300 text-xs font-semibold
-                        px-2.5 py-1 rounded-full border border-{{ color }}-700">
+          {% set badge_class = {
+              'QUEUED':'badge-gray','PROCESSING':'badge-blue','OCR_DONE':'badge-indigo',
+              'CLEANING':'badge-yellow','DONE':'badge-green','FAILED':'badge-red'
+          }.get(job.status, 'badge-gray') %}
+          <span class="{{ badge_class }} text-xs font-semibold px-2.5 py-1 rounded-full">
             {{ job.status }}
           </span>
         </td>

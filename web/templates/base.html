@@ -10,11 +10,79 @@
   <link href="https://cdn.jsdelivr.net/npm/flowbite@2/dist/flowbite.min.css" rel="stylesheet" />
 
   <style>
-    /* Subtle brand accent */
-    :root { --brand: #6d4fc2; }
+    /* ── Hard-lock dark mode ──────────────────────────────────────────── */
+    :root {
+      --brand:       #7c3aed;
+      --brand-light: #a78bfa;
+      --bg-base:     #030712;   /* gray-950 */
+      --bg-card:     #111827;   /* gray-900 */
+      --bg-card2:    #1f2937;   /* gray-800 */
+      --border:      #374151;   /* gray-700 */
+      --border-faint:#1f2937;   /* gray-800 */
+      --text-base:   #f3f4f6;   /* gray-100 */
+      --text-muted:  #9ca3af;   /* gray-400 */
+      --text-faint:  #6b7280;   /* gray-500 */
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      background-color: var(--bg-base) !important;
+      color: var(--text-base) !important;
+      min-height: 100vh;
+    }
+
+    /* Override any Flowbite / Tailwind light defaults */
+    .dark\:bg-gray-800, .dark\:bg-gray-900, .dark\:bg-gray-950 { }
+
+    /* Tables */
+    table { background-color: var(--bg-base) !important; color: var(--text-base) !important; }
+    thead { background-color: var(--bg-card) !important; }
+    tbody tr { background-color: var(--bg-base) !important; border-color: var(--border-faint) !important; }
+    tbody tr:hover { background-color: var(--bg-card) !important; }
+    th, td { color: var(--text-base) !important; border-color: var(--border-faint) !important; }
+
+    /* Form elements */
+    input, select, textarea {
+      background-color: var(--bg-card) !important;
+      border-color: var(--border) !important;
+      color: var(--text-base) !important;
+    }
+    input::placeholder { color: var(--text-faint) !important; }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--brand) !important;
+      outline: none !important;
+      box-shadow: 0 0 0 2px rgba(124,58,237,.35) !important;
+    }
+    select option { background-color: var(--bg-card); color: var(--text-base); }
+
+    /* Flowbite modal / dropdown overrides */
+    [data-dropdown-toggle], [data-modal-toggle] { color: var(--text-base); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Brand gradient (navbar) */
     .brand-gradient {
       background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
     }
+
+    /* Status badge colours — explicit, no dynamic class names */
+    .badge-gray   { background:#1f2937; color:#d1d5db; border:1px solid #374151; }
+    .badge-blue   { background:#1e3a5f; color:#93c5fd; border:1px solid #1d4ed8; }
+    .badge-indigo { background:#1e1b4b; color:#a5b4fc; border:1px solid #4338ca; }
+    .badge-yellow { background:#422006; color:#fcd34d; border:1px solid #d97706; }
+    .badge-green  { background:#052e16; color:#86efac; border:1px solid #15803d; }
+    .badge-red    { background:#3b0000; color:#fca5a5; border:1px solid #dc2626; }
+
+    /* Smooth transitions */
+    a, button { transition: color .15s, background-color .15s, border-color .15s, opacity .15s; }
+
+    /* Code blocks */
+    code { background: var(--bg-card2); color: #c4b5fd; padding: 0 .35rem; border-radius: .25rem; font-size: .85em; }
+    pre  { background: var(--bg-card2); border-radius: .5rem; padding: 1rem; overflow-x: auto; }
   </style>
 
   {% block extra_head %}{% endblock %}
@@ -22,12 +90,13 @@
 <body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col">
 
   <!-- ── Navbar ────────────────────────────────────────────────────── -->
-  <nav class="brand-gradient border-b border-purple-800 shadow-lg">
+  <nav class="brand-gradient border-b border-purple-900 shadow-lg">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
 
       <!-- Logo / App name -->
-      <a href="{{ url_for('dashboard.index') }}" class="flex items-center gap-3">
-        <svg class="w-8 h-8 text-purple-300" fill="none" stroke="currentColor" stroke-width="1.8"
+      <a href="{{ url_for('dashboard.index') }}" class="flex items-center gap-3 group">
+        <svg class="w-8 h-8 text-purple-300 group-hover:text-white transition-colors"
+             fill="none" stroke="currentColor" stroke-width="1.8"
              viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path stroke-linecap="round" stroke-linejoin="round"
                 d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987
@@ -42,25 +111,25 @@
       <div class="flex items-center gap-4">
         {% if user_name %}
           <a href="{{ url_for('upload.upload_form') }}"
-             class="text-sm text-purple-200 hover:text-white transition-colors hidden sm:block">
+             class="text-sm text-purple-200 hover:text-white hidden sm:block">
             + Upload
           </a>
           {% if is_admin %}
             <a href="{{ url_for('admin.all_jobs') }}"
-               class="text-sm text-purple-200 hover:text-white transition-colors hidden sm:block">
+               class="text-sm text-purple-200 hover:text-white hidden sm:block">
               Admin
             </a>
           {% endif %}
           <span class="text-sm text-purple-300 hidden md:block">{{ user_name }}</span>
           <a href="{{ url_for('auth.logout') }}"
-             class="text-sm bg-purple-700 hover:bg-purple-600 px-3 py-1.5 rounded-lg
-                    transition-colors text-white font-medium">
+             class="text-sm bg-purple-800 hover:bg-purple-700 border border-purple-600
+                    px-3 py-1.5 rounded-lg text-white font-medium">
             Logout
           </a>
         {% else %}
           <a href="{{ url_for('auth.login') }}"
              class="text-sm bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-lg
-                    transition-colors text-white font-semibold">
+                    text-white font-semibold">
             Login
           </a>
         {% endif %}
@@ -75,7 +144,8 @@
         {% for category, message in messages %}
           {% if category == 'error' %}
             <div id="flash-{{ loop.index }}"
-                 class="flex items-center p-4 text-sm text-red-400 rounded-lg bg-red-950 border border-red-800"
+                 class="flex items-center p-4 text-sm text-red-300 rounded-lg border"
+                 style="background:#3b0000;border-color:#dc2626"
                  role="alert">
               <svg class="shrink-0 inline w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5
@@ -85,8 +155,9 @@
               {{ message }}
             </div>
           {% else %}
-            <div class="flex items-center p-4 text-sm text-blue-400 rounded-lg bg-blue-950
-                        border border-blue-800" role="alert">
+            <div class="flex items-center p-4 text-sm text-blue-300 rounded-lg border"
+                 style="background:#1e3a5f;border-color:#1d4ed8"
+                 role="alert">
               <svg class="shrink-0 inline w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5
                          4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0
@@ -106,7 +177,8 @@
   </main>
 
   <!-- ── Footer ────────────────────────────────────────────────────── -->
-  <footer class="border-t border-gray-800 py-4 text-center text-xs text-gray-600">
+  <footer class="border-t py-4 text-center text-xs"
+          style="border-color:#1f2937;color:#4b5563">
     Kitab Pipeline &mdash; Phase 1
   </footer>
 
