@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Preview — {{ job.title or job.id }} — Kitab Pipeline{% endblock %}
+{% block meta_description %}HTML preview of OCR output for {{ job.title or job.id }}.{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h1 class="text-xl font-bold text-white">{{ job.title or 'Preview' }}</h1>
+    <p class="text-gray-400 text-sm">HTML output preview</p>
+  </div>
+  <div class="flex gap-3">
+    <a href="{{ url_for('jobs.download_html', job_id=job.id) }}"
+       class="text-sm bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg
+              border border-gray-600 transition-colors">
+      Download .html
+    </a>
+    <a href="{{ url_for('jobs.job_status', job_id=job.id) }}"
+       class="text-sm text-gray-400 hover:text-white transition-colors py-2">
+      ← Back to job
+    </a>
+  </div>
+</div>
+
+<div class="rounded-xl overflow-hidden border border-gray-700 shadow-2xl bg-white" style="height: calc(100vh - 200px);">
+  <iframe id="preview-frame"
+          src="{{ url_for('jobs.download_html', job_id=job.id) }}"
+          class="w-full h-full border-0"
+          title="OCR output preview for {{ job.title or job.id }}">
+  </iframe>
+</div>
+{% endblock %}

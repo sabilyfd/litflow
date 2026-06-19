@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Admin — All Jobs — Kitab Pipeline{% endblock %}
+{% block meta_description %}Admin view of all OCR jobs across all users.{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-8">
+  <div>
+    <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+      <span class="text-xs bg-red-800 text-red-200 px-2 py-0.5 rounded font-semibold uppercase tracking-wider">
+        Admin
+      </span>
+      All Jobs
+    </h1>
+    <p class="text-gray-400 text-sm mt-1">{{ jobs | length }} total job(s) across all users.</p>
+  </div>
+  <a href="{{ url_for('dashboard.index') }}"
+     class="text-sm text-gray-400 hover:text-white transition-colors">
+    ← My Jobs
+  </a>
+</div>
+
+{% if jobs %}
+<div class="relative overflow-x-auto rounded-xl border border-gray-800 shadow-xl">
+  <table class="w-full text-sm text-left text-gray-300">
+    <thead class="text-xs text-gray-400 uppercase bg-gray-900 border-b border-gray-800">
+      <tr>
+        <th class="px-6 py-4">Title</th>
+        <th class="px-6 py-4">Lang</th>
+        <th class="px-6 py-4">Status</th>
+        <th class="px-6 py-4">Pages</th>
+        <th class="px-6 py-4">Uploaded By</th>
+        <th class="px-6 py-4">Created</th>
+        <th class="px-6 py-4">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr class="bg-gray-950 border-b border-gray-800 hover:bg-gray-900 transition-colors">
+        <td class="px-6 py-4 font-medium text-white max-w-xs truncate">
+          {{ job.title or '—' }}
+        </td>
+        <td class="px-6 py-4">
+          <span class="bg-gray-800 text-gray-300 text-xs font-semibold px-2.5 py-1 rounded">
+            {{ job.lang_hint | upper }}
+          </span>
+        </td>
+        <td class="px-6 py-4">
+          {% set status_colors = {
+              'QUEUED': 'gray', 'PROCESSING': 'blue', 'OCR_DONE': 'indigo',
+              'CLEANING': 'yellow', 'DONE': 'green', 'FAILED': 'red'
+          } %}
+          {% set color = status_colors.get(job.status, 'gray') %}
+          <span class="bg-{{ color }}-900 text-{{ color }}-300 text-xs font-semibold
+                        px-2.5 py-1 rounded-full border border-{{ color }}-700">
+            {{ job.status }}
+          </span>
+        </td>
+        <td class="px-6 py-4 text-gray-400">
+          {{ job.page_done }}/{{ job.page_total or '?' }}
+        </td>
+        <td class="px-6 py-4 text-gray-400 max-w-[180px]">
+          <div class="truncate" title="{{ job.user_id }}">
+            {{ job.user_name or job.user_id[:12] ~ '…' }}
+          </div>
+          <div class="text-xs text-gray-600 truncate">{{ job.user_email or '' }}</div>
+        </td>
+        <td class="px-6 py-4 text-gray-400 whitespace-nowrap">
+          {{ job.created_at[:19] | replace('T', ' ') if job.created_at else '—' }}
+        </td>
+        <td class="px-6 py-4">
+          <div class="flex gap-2 flex-wrap">
+            <a href="{{ url_for('jobs.job_status', job_id=job.id) }}"
+               class="text-xs text-purple-400 hover:text-purple-200 font-medium transition-colors">
+              View
+            </a>
+            {% if job.status == 'DONE' %}
+            <a href="{{ url_for('jobs.download_txt', job_id=job.id) }}"
+               class="text-xs text-green-400 hover:text-green-200 font-medium transition-colors">
+              .txt
+            </a>
+            <a href="{{ url_for('jobs.download_html', job_id=job.id) }}"
+               class="text-xs text-green-400 hover:text-green-200 font-medium transition-colors">
+              .html
+            </a>
+            {% endif %}
+            {% if job.status == 'FAILED' %}
+            <span class="text-xs text-red-500 font-medium">FAILED</span>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="flex flex-col items-center justify-center py-20 text-center">
+  <div class="bg-gray-900 rounded-full p-6 mb-5 ring-1 ring-gray-700">
+    <svg class="w-12 h-12 text-gray-600" fill="none" stroke="currentColor" stroke-width="1.5"
+         viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25
+               0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0
+               1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621
+               0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
+    </svg>
+  </div>
+  <h3 class="text-lg font-semibold text-gray-300">No jobs in the system</h3>
+  <p class="text-gray-500 text-sm mt-1">No users have uploaded any PDFs yet.</p>
+</div>
+{% endif %}
+{% endblock %}

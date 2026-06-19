@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Upload PDF — Kitab Pipeline{% endblock %}
+{% block meta_description %}Upload a scanned Islamic book PDF for OCR processing.{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <h1 class="text-2xl font-bold text-white mb-2">Upload a PDF</h1>
+  <p class="text-gray-400 text-sm mb-8">
+    Supported: scanned PDF only. Max {{ max_mb }} MB.
+  </p>
+
+  <form id="upload-form" action="{{ url_for('upload.upload_file') }}"
+        method="POST" enctype="multipart/form-data" class="space-y-6">
+
+    <!-- Dropzone -->
+    <div class="flex items-center justify-center w-full">
+      <label for="pdf-dropzone"
+             class="flex flex-col items-center justify-center w-full h-52 border-2
+                    border-dashed border-purple-700 rounded-2xl cursor-pointer
+                    bg-gray-900 hover:bg-gray-800 transition-colors group">
+        <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
+          <svg class="w-10 h-10 mb-3 text-purple-500 group-hover:text-purple-300 transition-colors"
+               fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021
+                     18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+          </svg>
+          <p class="mb-2 text-sm text-gray-300 group-hover:text-white transition-colors">
+            <span class="font-semibold">Click to upload</span> or drag &amp; drop
+          </p>
+          <p class="text-xs text-gray-500" id="file-name-display">PDF only (max {{ max_mb }} MB)</p>
+        </div>
+        <input id="pdf-dropzone" name="file" type="file" accept=".pdf" class="hidden" required />
+      </label>
+    </div>
+
+    <!-- Book title -->
+    <div>
+      <label for="title" class="block text-sm font-medium text-gray-300 mb-2">
+        Book Title <span class="text-red-400">*</span>
+      </label>
+      <input type="text" id="title" name="title" required
+             placeholder="e.g. Bukhari Sharif Vol. 1"
+             class="w-full bg-gray-900 border border-gray-700 text-white text-sm
+                    rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500
+                    focus:ring-1 focus:ring-purple-500 placeholder-gray-600
+                    transition-colors" />
+    </div>
+
+    <!-- Language hint -->
+    <div>
+      <label for="lang_hint" class="block text-sm font-medium text-gray-300 mb-2">
+        Primary Language
+      </label>
+      <select id="lang_hint" name="lang_hint"
+              class="w-full bg-gray-900 border border-gray-700 text-white text-sm
+                     rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500
+                     focus:ring-1 focus:ring-purple-500 transition-colors">
+        <option value="bn" selected>Bengali (bn)</option>
+        <option value="ar">Arabic (ar)</option>
+        <option value="en">English (en)</option>
+        <option value="mixed">Mixed (bn + ar + en)</option>
+      </select>
+    </div>
+
+    <!-- Submit -->
+    <button type="submit" id="submit-btn"
+            class="w-full bg-purple-600 hover:bg-purple-500 active:bg-purple-700
+                   text-white font-semibold py-3.5 rounded-xl transition-all
+                   shadow-lg shadow-purple-900/40 flex items-center justify-center gap-2">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021
+                 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+      </svg>
+      Upload &amp; Start OCR
+    </button>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Show selected filename in the dropzone label
+  const input = document.getElementById('pdf-dropzone');
+  const display = document.getElementById('file-name-display');
+  input.addEventListener('change', () => {
+    if (input.files.length > 0) {
+      display.textContent = input.files[0].name;
+    }
+  });
+
+  // Disable submit after click to prevent double-submit
+  document.getElementById('upload-form').addEventListener('submit', function () {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,16 @@
+[project]
+name = "kitab-pipeline"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+dependencies = [
+  "flask",
+  "authlib",
+  "celery",
+  "redis",
+  "python-dotenv",
+  "surya-ocr",
+  "pdf2image",
+  "gunicorn",
+  "requests",
+]
