@@ -3,6 +3,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
+from celery import Celery
 from flask import (
     Blueprint,
     flash,
@@ -17,6 +18,10 @@ from web.auth import login_required
 from web.db import create_job
 
 upload_bp = Blueprint("upload", __name__)
+
+# Lightweight Celery client — broker only, no task imports needed.
+# The web container dispatches tasks by name; the worker container executes them.
+_celery = Celery(broker=os.environ.get("REDIS_URL", "redis://redis:6379/0"))
 
 ALLOWED_EXTENSIONS = {"pdf"}
 JOBS_DIR = os.environ.get("JOBS_DIR", "/jobs")
@@ -103,9 +108,7 @@ def upload_file():
         created_at=created_at,
     )
 
-    # Enqueue Celery task (import here to avoid circular deps)
-    from worker.tasks import run_pipeline
-
-    run_pipeline.delay(job_id)
+    # Enqueue Celery task by name — no worker module import required
+    _celery.send_task("worker.tasks.run_pipeline", args=[job_id])
 
     return redirect(url_for("jobs.job_status", job_id=job_id))
