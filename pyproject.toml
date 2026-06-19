@@ -9,7 +9,7 @@ dependencies = [
   "celery",
   "redis",
   "python-dotenv",
-  "surya-ocr",
+  "surya-ocr==0.6.13",
   "pdf2image",
   "gunicorn",
   "requests",

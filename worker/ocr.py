@@ -36,8 +36,8 @@ LANG_MAP: dict[str, list[str]] = {
 def _load_surya_models():
     """Lazy-load Surya models (downloads on first run, ~1-2 GB)."""
     # Import here to avoid loading models at module import time
-    from surya.model.detection.model import load_model as load_det_model
-    from surya.model.detection.processor import load_processor as load_det_processor
+    from surya.model.detection.segformer import load_model as load_det_model
+    from surya.model.detection.segformer import load_processor as load_det_processor
     from surya.model.recognition.model import load_model as load_rec_model
     from surya.model.recognition.processor import load_processor as load_rec_processor
 
