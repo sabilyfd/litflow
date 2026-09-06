@@ -1,17 +1,20 @@
 import os
 from functools import wraps
 
-import requests
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 from flask import (
     Blueprint,
+    flash,
     redirect,
+    render_template,
+    request,
     session,
     url_for,
-    current_app,
-    g,
 )
+
+from web.db import get_user
+from web.passwords import verify_password
 
 load_dotenv()
 
@@ -69,8 +72,36 @@ def admin_required(f):
 
 @auth_bp.route("/login")
 def login():
+    """Landing page — offers both OIDC and local username/password sign-in."""
+    if "user_id" in session:
+        return redirect(url_for("dashboard.index"))
+    return render_template("login.html")
+
+
+@auth_bp.route("/login/oidc")
+def login_oidc():
     redirect_uri = os.environ["OIDC_REDIRECT_URI"]
     return oauth.pocket_id.authorize_redirect(redirect_uri)
+
+
+@auth_bp.route("/login/password", methods=["POST"])
+def login_password():
+    """Authenticate a CLI-provisioned local account."""
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+
+    user = get_user(username)
+    if user is None or not verify_password(user["password_hash"], password):
+        flash("Invalid username or password.", "error")
+        return redirect(url_for("auth.login"))
+
+    session.clear()
+    # "local:" namespace keeps these ids from ever colliding with an OIDC `sub`.
+    session["user_id"] = f"local:{username}"
+    session["user_name"] = user["name"] or username
+    session["user_email"] = user["email"] or ""
+    session["is_admin"] = bool(user["is_admin"])
+    return redirect(url_for("dashboard.index"))
 
 
 @auth_bp.route("/auth/callback")
@@ -81,6 +112,7 @@ def callback():
     admin_group = os.environ.get("OIDC_ADMIN_GROUP", "admin")
     groups = userinfo.get("groups", [])
 
+    session.clear()
     session["user_id"] = userinfo["sub"]
     session["user_name"] = userinfo.get("name") or userinfo.get("preferred_username", "")
     session["user_email"] = userinfo.get("email", "")

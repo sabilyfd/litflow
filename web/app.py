@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from flask import Flask
 
 from web.auth import auth_bp, init_oauth
+from web.cli import user_cli
 from web.db import init_db
 from web.routes.admin import admin_bp
 from web.routes.dashboard import dashboard_bp
@@ -23,6 +24,14 @@ def create_app() -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = (
         int(os.environ.get("MAX_UPLOAD_MB", 500)) * 1024 * 1024
     )
+    # Session cookie hardening — matters now that a password session exists.
+    # SECURE defaults on (prod terminates TLS at nginx); set false for plain-http local dev.
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "true").lower()
+        == "true",
+    )
 
     # -------------------------------------------------------------------
     # OAuth
@@ -38,6 +47,7 @@ def create_app() -> Flask:
     # Blueprints
     # -------------------------------------------------------------------
     app.register_blueprint(auth_bp)
+    app.register_blueprint(user_cli)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(upload_bp)
     app.register_blueprint(jobs_bp)

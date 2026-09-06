@@ -33,13 +33,25 @@
     </div>
 
     <!-- Card -->
-    <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-8 text-center">
-      <h2 class="text-lg font-semibold text-gray-100 mb-2">Sign in to continue</h2>
-      <p class="text-sm text-gray-400 mb-8">
-        Authentication is handled securely via Pocket-ID (OIDC).
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-8">
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="mb-4 p-3 text-sm rounded-lg border text-center"
+                 style="{% if category == 'error' %}background:#3b0000;border-color:#dc2626;color:#fca5a5{% else %}background:#1e3a5f;border-color:#1d4ed8;color:#93c5fd{% endif %}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <h2 class="text-lg font-semibold text-gray-100 mb-2 text-center">Sign in to continue</h2>
+      <p class="text-sm text-gray-400 mb-6 text-center">
+        Use your Pocket-ID account, or a local account issued by an administrator.
       </p>
 
-      <a href="{{ url_for('auth.login') }}"
+      <a href="{{ url_for('auth.login_oidc') }}"
          id="login-btn"
          class="w-full inline-flex items-center justify-center gap-3 px-6 py-3.5
                 bg-purple-600 hover:bg-purple-500 active:bg-purple-700
@@ -53,6 +65,30 @@
         </svg>
         Sign in with Pocket-ID
       </a>
+
+      <div class="flex items-center gap-3 my-6">
+        <span class="flex-1 h-px bg-gray-700"></span>
+        <span class="text-xs text-gray-500 uppercase tracking-wide">or</span>
+        <span class="flex-1 h-px bg-gray-700"></span>
+      </div>
+
+      <form method="post" action="{{ url_for('auth.login_password') }}" class="space-y-3 text-left">
+        <div>
+          <label for="username" class="block text-xs text-gray-400 mb-1">Username</label>
+          <input type="text" name="username" id="username" required autocomplete="username"
+                 class="w-full px-3 py-2.5 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label for="password" class="block text-xs text-gray-400 mb-1">Password</label>
+          <input type="password" name="password" id="password" required autocomplete="current-password"
+                 class="w-full px-3 py-2.5 rounded-lg text-sm" />
+        </div>
+        <button type="submit"
+                class="w-full px-6 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-600
+                       text-white font-semibold rounded-xl transition-colors">
+          Sign in with password
+        </button>
+      </form>
     </div>
 
     <p class="text-center text-xs text-gray-600 mt-6">

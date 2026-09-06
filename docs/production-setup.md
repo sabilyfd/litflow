@@ -119,6 +119,24 @@ litflow-worker-1  litflow-worker     Up
 
 ---
 
+## 4a. Local User Accounts (optional)
+
+Besides OIDC, LitFlow supports local username/password accounts. They can be
+created **only** from the CLI — there is no signup page.
+
+```bash
+docker compose exec web flask --app web.app user create alice --admin
+docker compose exec web flask --app web.app user list
+docker compose exec web flask --app web.app user passwd alice
+docker compose exec web flask --app web.app user delete alice
+```
+
+`create` prompts for the password (with confirmation) unless `--password` is
+passed. Passwords are stored as scrypt hashes in the same SQLite DB. Local
+sign-in is the "or" option on the login page.
+
+---
+
 ## 5. Nginx + Certbot Setup
 
 Install Nginx and Certbot on the host:

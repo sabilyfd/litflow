@@ -14,11 +14,11 @@ The web portal, job store, and task queue run on-premises. OCR is delegated to *
 - File size validation (configurable limit, default 500 MB)
 - Uploaded files stored in a persistent jobs volume (`/jobs`)
 
-### 🔐 Authentication — OIDC via Pocket-ID
-- Single sign-on login via any Pocket-ID (OIDC) provider
-- No passwords stored — all auth delegated to the identity provider
-- Role detection: users in the configured admin group get elevated access
-- Session stores user identity, name, email, and admin flag
+### 🔐 Authentication
+- **OIDC via Pocket-ID** — single sign-on via any Pocket-ID (OIDC) provider; role detection from the configured admin group
+- **Local username/password** — accounts created only from the CLI (`flask user create …`); no self-signup route. Passwords hashed with scrypt via Werkzeug
+- Both paths populate the same session (identity, name, email, admin flag); local user ids are namespaced `local:<username>`
+- Session cookies are `HttpOnly` + `SameSite=Lax` (and `Secure` unless `SESSION_COOKIE_SECURE=false`)
 
 ### ⚙️ Async OCR Pipeline
 - PDF pages converted to images via `pdf2image` (Poppler)

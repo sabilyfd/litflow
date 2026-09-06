@@ -16,7 +16,7 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Create the jobs table if it does not already exist."""
+    """Create the jobs and users tables if they do not already exist."""
     os.makedirs(JOBS_DIR, exist_ok=True)
     with _get_conn() as conn:
         conn.execute(
@@ -36,7 +36,80 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                username      TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                name          TEXT,
+                email         TEXT,
+                is_admin      INTEGER NOT NULL DEFAULT 0,
+                created_at    TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Local user accounts (created via the `flask user` CLI only — no signup route)
+# ---------------------------------------------------------------------------
+
+def create_user(
+    username: str,
+    password_hash: str,
+    name: str,
+    email: str,
+    is_admin: bool,
+    created_at: str,
+) -> None:
+    """Insert a local user. Raises sqlite3.IntegrityError if username exists."""
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO users (username, password_hash, name, email, is_admin, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (username, password_hash, name, email, 1 if is_admin else 0, created_at),
+        )
+        conn.commit()
+
+
+def get_user(username: str) -> dict | None:
+    """Return a local user row as a dict, or None."""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE username = ?", (username,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_users() -> list[dict]:
+    """Return all local users, oldest first."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM users ORDER BY created_at ASC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_user_password(username: str, password_hash: str) -> bool:
+    """Replace a local user's password hash. Returns True if a row changed."""
+    with _get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE users SET password_hash = ? WHERE username = ?",
+            (password_hash, username),
+        )
+        conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_user(username: str) -> bool:
+    """Delete a local user. Returns True if a row was removed."""
+    with _get_conn() as conn:
+        cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
+        conn.commit()
+    return cur.rowcount > 0
 
 
 def create_job(
