@@ -22,7 +22,7 @@ Internet
    └── internal Docker network
            │
            ├── [Redis]   ← task queue
-           └── [Worker]  ← Celery, Surya OCR, CPU-only
+           └── [Worker]  ← Celery, Google Cloud Document AI client
 ```
 
 All services run in the same Docker Compose stack. Only the web service is exposed externally, via the reverse proxy.
@@ -68,8 +68,11 @@ REDIS_URL=redis://redis:6379/0
 JOBS_DIR=/jobs
 MAX_UPLOAD_MB=500
 
-# Surya
-SURYA_CPU_ONLY=true
+# Google Cloud Document AI (see docs/document-ai-setup.md)
+GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcp-sa.json
+DOCAI_PROJECT_ID=your-gcp-project
+DOCAI_LOCATION=us
+DOCAI_PROCESSOR_ID=your-processor-id
 ```
 
 > Keep `.env` out of version control. It is already in `.gitignore`.
@@ -230,9 +233,9 @@ For a production server, increase workers based on CPU cores (`2 × cores + 1` i
 
 ## 9. Worker Tuning
 
-The Celery worker uses `--concurrency=1` (one OCR job at a time) because Surya runs in CPU-only mode and is compute-intensive. Do not increase concurrency unless you have enough RAM and CPU headroom.
+OCR is now one Document AI API call per page, so the worker is network-bound rather than CPU-bound. `WORKER_CONCURRENCY` can safely be raised (default `4`); the practical ceiling is your Document AI per-minute quota.
 
-For very large books (500+ pages), the worker has a soft time limit of 1 hour and a hard kill at 2 hours (configured in `worker/tasks.py`). Adjust if needed.
+Per-page tasks have a soft time limit of 10 min and a hard kill at 15 min (configured in `worker/celery_app.py`). Adjust if needed.
 
 ---
 
@@ -332,7 +335,7 @@ docker compose logs worker
 
 Common causes:
 - `REDIS_URL` mismatch between `web` and `worker`
-- Worker container crashed (check for import errors from Surya/pdf2image)
+- Worker container crashed (check for import errors from pdf2image, or missing `DOCAI_*` / credentials env)
 
 ### Upload fails with `413 Request Entity Too Large`
 

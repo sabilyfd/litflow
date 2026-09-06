@@ -2,7 +2,7 @@
 
 **LitFlow** is a self-hosted web portal for digitising scanned Islamic books. Users upload PDF scans, and the system automatically runs OCR (optical character recognition) on every page, producing clean `.txt` and `.html` outputs ready for editing, search, or publishing.
 
-It is designed to run entirely on-premises — no cloud APIs, no third-party OCR services — using open-source models on CPU hardware.
+The web portal, job store, and task queue run on-premises. OCR is delegated to **Google Cloud Document AI** — see [docs/document-ai-setup.md](docs/document-ai-setup.md).
 
 ---
 
@@ -22,9 +22,9 @@ It is designed to run entirely on-premises — no cloud APIs, no third-party OCR
 
 ### ⚙️ Async OCR Pipeline
 - PDF pages converted to images via `pdf2image` (Poppler)
-- OCR performed by **Surya OCR** — an open-source, multilingual model running in CPU mode
-- Language-aware: hints guide Surya to load the right script models (`bn`, `ar`, `en`, or all three for mixed books)
-- Each page produces an individual `.txt` fragment and an `.html` fragment with one `<p>` per text block
+- OCR performed by **Google Cloud Document AI** — one `process_document` call per page
+- Language-aware: `bn` / `ar` / `en` hints are passed to Document AI as language hints
+- Each page produces an individual `.txt` fragment and an `.html` fragment with one `<p>` per text line
 - All processing happens asynchronously via **Celery + Redis** — the web server is never blocked
 
 ### 📊 Live Job Status
@@ -68,7 +68,7 @@ It is designed to run entirely on-premises — no cloud APIs, no third-party OCR
 | Database | SQLite via raw `sqlite3` (no ORM) |
 | Task queue | Celery |
 | Message broker | Redis |
-| OCR engine | Surya OCR (CPU mode) |
+| OCR engine | Google Cloud Document AI |
 | PDF rendering | pdf2image + Poppler |
 | UI | Flowbite + Tailwind CSS (CDN), Jinja2 templates |
 | WSGI server | Gunicorn |
@@ -83,4 +83,3 @@ It is designed to run entirely on-premises — no cloud APIs, no third-party OCR
 - Post-OCR text cleaning / diacritic normalisation
 - Search across job outputs
 - Multi-user job sharing or team workspaces
-- GPU/CUDA acceleration for OCR (currently CPU-only)

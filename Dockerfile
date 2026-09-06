@@ -39,14 +39,12 @@ ENTRYPOINT ["web-entrypoint.sh"]
 CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "web.app:app"]
 
 
-# ── worker: Celery + Surya OCR ────────────────────────────────────────────────
+# ── worker: Celery + Document AI ──────────────────────────────────────────────
 FROM base AS worker
 
 # System deps for pdf2image (poppler) — worker only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
-    libgl1 \
-    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY worker/ ./worker/

@@ -1,5 +1,5 @@
 """
-OCR module — wraps Surya OCR for CPU-mode inference.
+OCR module — wraps Google Cloud Document AI for per-page recognition.
 
 Public API (called by Celery tasks):
   split_pages(job_id) -> int
@@ -8,29 +8,30 @@ Public API (called by Celery tasks):
       Returns the total number of pages.
 
   run_page(job_id, page_num, langs) -> None
-      Runs Surya OCR on the pre-rendered PNG for page_num.
+      Sends the pre-rendered PNG for page_num to Document AI.
       Writes:
         /jobs/{job_id}/pages/page_{n:03d}.txt
         /jobs/{job_id}/pages/page_{n:03d}.html
 
-Surya models are cached at module level (loaded once per worker process,
-reused for every subsequent page task on the same process).
+Auth: Application Default Credentials. Set GOOGLE_APPLICATION_CREDENTIALS to a
+service-account JSON key, or run `gcloud auth application-default login`.
+
+Required env:
+  DOCAI_PROJECT_ID    GCP project id
+  DOCAI_LOCATION      processor location, "us" or "eu" (default "us")
+  DOCAI_PROCESSOR_ID  Document AI OCR processor id
 """
 
 import logging
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-from pdf2image import convert_from_path
-
-load_dotenv()
-
 logger = logging.getLogger(__name__)
 
 JOBS_DIR = os.environ.get("JOBS_DIR", "/jobs")
 
-# Language code mapping from app hint → Surya language list
+# Language code mapping from app hint → Document AI language hints.
+# Document AI auto-detects script; hints only nudge ambiguous cases.
 LANG_MAP: dict[str, list[str]] = {
     "bn": ["bn"],
     "ar": ["ar"],
@@ -38,46 +39,34 @@ LANG_MAP: dict[str, list[str]] = {
     "mixed": ["bn", "ar", "en"],
 }
 
-# ---------------------------------------------------------------------------
-# Module-level model cache — loaded once per worker process on first use.
-# ---------------------------------------------------------------------------
-_MODELS: dict = {}
+_DOCAI_LOCATION = os.environ.get("DOCAI_LOCATION", "us")
+
+# Client + processor name are cheap to build but reused across page tasks.
+_client = None
+_processor_name: str | None = None
 
 
-def _get_models() -> tuple:
-    """Return (det_model, det_processor, rec_model, rec_processor).
+def _get_client_and_processor():
+    """Return (DocumentProcessorServiceClient, processor_resource_name), cached."""
+    global _client, _processor_name
+    if _client is not None:
+        return _client, _processor_name
 
-    Models are loaded from disk on the first call and then cached in
-    _MODELS for the lifetime of the worker process.
-    """
-    global _MODELS
-    if _MODELS:
-        return (
-            _MODELS["det_model"],
-            _MODELS["det_processor"],
-            _MODELS["rec_model"],
-            _MODELS["rec_processor"],
-        )
+    from google.api_core.client_options import ClientOptions
+    from google.cloud import documentai
 
-    logger.info("Loading Surya models (first use in this worker process)…")
+    project_id = os.environ["DOCAI_PROJECT_ID"]
+    processor_id = os.environ["DOCAI_PROCESSOR_ID"]
 
-    from surya.model.detection.model import load_model as load_det_model
-    from surya.model.detection.model import load_processor as load_det_processor
-    from surya.model.recognition.model import load_model as load_rec_model
-    from surya.model.recognition.processor import load_processor as load_rec_processor
-
-    _MODELS["det_model"] = load_det_model()
-    _MODELS["det_processor"] = load_det_processor()
-    _MODELS["rec_model"] = load_rec_model()
-    _MODELS["rec_processor"] = load_rec_processor()
-
-    logger.info("Surya models loaded and cached.")
-    return (
-        _MODELS["det_model"],
-        _MODELS["det_processor"],
-        _MODELS["rec_model"],
-        _MODELS["rec_processor"],
+    opts = ClientOptions(
+        api_endpoint=f"{_DOCAI_LOCATION}-documentai.googleapis.com"
     )
+    _client = documentai.DocumentProcessorServiceClient(client_options=opts)
+    _processor_name = _client.processor_path(
+        project_id, _DOCAI_LOCATION, processor_id
+    )
+    logger.info("Document AI client ready: %s", _processor_name)
+    return _client, _processor_name
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +84,10 @@ def split_pages(job_id: str) -> int:
     pages_dir = job_dir / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
 
+    from pdf2image import convert_from_path
+
     logger.info("Converting PDF to images (dpi=150): %s", pdf_path)
-    # dpi=150 gives a good speed/quality balance for CPU Surya inference.
+    # dpi=150 keeps page images well under the Document AI 20 MB / 40 MP limit.
     images = convert_from_path(str(pdf_path), dpi=150)
     page_total = len(images)
 
@@ -110,14 +101,13 @@ def split_pages(job_id: str) -> int:
 
 
 def run_page(job_id: str, page_num: int, langs: list[str]) -> None:
-    """Run Surya OCR on a single pre-rendered page image.
+    """Run Document AI OCR on a single pre-rendered page image.
 
     Reads  /jobs/{job_id}/pages/page_{page_num:03d}.png
     Writes /jobs/{job_id}/pages/page_{page_num:03d}.txt
            /jobs/{job_id}/pages/page_{page_num:03d}.html
     """
-    from PIL import Image
-    from surya.ocr import run_ocr
+    from google.cloud import documentai
 
     pages_dir = Path(JOBS_DIR) / job_id / "pages"
     img_path = pages_dir / f"page_{page_num:03d}.png"
@@ -128,39 +118,25 @@ def run_page(job_id: str, page_num: int, langs: list[str]) -> None:
         )
 
     logger.info("OCR page %d for job %s with langs %s", page_num, job_id, langs)
-    image = Image.open(str(img_path))
+    client, processor_name = _get_client_and_processor()
 
-    det_model, det_processor, rec_model, rec_processor = _get_models()
-
-    # batch_size=1: CPU-safe sequential inference; avoids the default large batch
-    # that makes recognition extremely slow on CPU.
-    results = run_ocr(
-        [image],
-        [langs],
-        det_model,
-        det_processor,
-        rec_model,
-        rec_processor,
-        batch_size=1,
+    raw_doc = documentai.RawDocument(
+        content=img_path.read_bytes(),
+        mime_type="image/png",
+    )
+    process_options = documentai.ProcessOptions(
+        ocr_config=documentai.OcrConfig(
+            hints=documentai.OcrConfig.Hints(language_hints=langs)
+        )
+    )
+    request = documentai.ProcessRequest(
+        name=processor_name,
+        raw_document=raw_doc,
+        process_options=process_options,
     )
 
-    page_result = results[0]  # one image → one result
-
-    # --- Build text output ---
-    lines = [line.text for line in page_result.text_lines if line.text.strip()]
-    txt_content = "\n".join(lines)
-
-    # --- Build HTML output ---
-    paragraphs = "\n".join(
-        f"  <p>{_escape_html(line.text)}</p>"
-        for line in page_result.text_lines
-        if line.text.strip()
-    )
-    html_content = (
-        f'<div class="page" data-page="{page_num}">\n'
-        f"{paragraphs}\n"
-        f"</div>"
-    )
+    result = client.process_document(request=request)
+    txt_content, html_content = _page_outputs(result.document.text or "", page_num)
 
     (pages_dir / f"page_{page_num:03d}.txt").write_text(txt_content, encoding="utf-8")
     (pages_dir / f"page_{page_num:03d}.html").write_text(html_content, encoding="utf-8")
@@ -171,6 +147,23 @@ def run_page(job_id: str, page_num: int, langs: list[str]) -> None:
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
+def _page_outputs(text: str, page_num: int) -> tuple[str, str]:
+    """Turn Document AI page text into (txt, html) fragments.
+
+    txt  — non-blank lines joined by newline.
+    html — <div class="page"> with one escaped <p> per non-blank line.
+    """
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    txt_content = "\n".join(lines)
+    paragraphs = "\n".join(f"  <p>{_escape_html(ln)}</p>" for ln in lines)
+    html_content = (
+        f'<div class="page" data-page="{page_num}">\n'
+        f"{paragraphs}\n"
+        f"</div>"
+    )
+    return txt_content, html_content
+
 
 def _escape_html(text: str) -> str:
     """Minimal HTML escaping for text block content."""

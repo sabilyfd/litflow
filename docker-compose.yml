@@ -33,6 +33,7 @@ services:
     env_file: .env
     volumes:
       - ./jobs:/jobs
+      - ./secrets:/secrets:ro
     depends_on:
       redis:
         condition: service_healthy
