@@ -12,6 +12,7 @@ right-to-left/auto direction, and per-page dividers.
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -41,6 +42,12 @@ OUTPUT_HTML_TEMPLATE = """\
 """
 
 
+def _page_number(path: Path) -> int:
+    """Numeric page index parsed from a page_NNN filename."""
+    match = re.search(r"page_(\d+)\.", path.name)
+    return int(match.group(1)) if match else 0
+
+
 def merge(job_id: str) -> None:
     """
     Merge per-page OCR outputs into a single output.txt and output.html.
@@ -60,9 +67,11 @@ def merge(job_id: str) -> None:
             meta = json.load(f)
         title = meta.get("title", job_id)
 
-    # --- Collect page files in sorted order ---
-    txt_files = sorted(pages_dir.glob("page_*.txt"))
-    html_files = sorted(pages_dir.glob("page_*.html"))
+    # --- Collect page files in numeric page order ---
+    # Plain lexical sort breaks past 999 pages: page_1000.txt would land
+    # between page_100.txt and page_101.txt.
+    txt_files = sorted(pages_dir.glob("page_*.txt"), key=_page_number)
+    html_files = sorted(pages_dir.glob("page_*.html"), key=_page_number)
 
     if not txt_files:
         raise FileNotFoundError(

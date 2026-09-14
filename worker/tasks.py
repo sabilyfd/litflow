@@ -75,11 +75,21 @@ def split_pdf(self, job_id: str) -> None:
 # 2. ocr_page — one task per page
 # ---------------------------------------------------------------------------
 
-@celery_app.task(bind=True, name="worker.tasks.ocr_page")
+# Autoretry re-runs the whole task body per attempt, so the FAILED status is
+# only written once retries are exhausted (self.request.retries == max_retries).
+@celery_app.task(
+    bind=True,
+    name="worker.tasks.ocr_page",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=4,  # 5 attempts total: 1 + backoff (1s, 2s, 4s, 8s)
+)
 def ocr_page(self, job_id: str, page_num: int, langs: list[str]) -> None:
     """Run OCR on a single pre-rendered page image.
 
     Writes page_NNN.txt and page_NNN.html, then atomically increments page_done.
+    Transient Document AI / network errors are retried with exponential
+    backoff; the job is marked FAILED only when retries are exhausted.
     """
     logger.info("ocr_page starting: job=%s page=%d langs=%s", job_id, page_num, langs)
     try:
@@ -87,10 +97,16 @@ def ocr_page(self, job_id: str, page_num: int, langs: list[str]) -> None:
         increment_page_done(job_id)
         logger.info("ocr_page done: job=%s page=%d", job_id, page_num)
     except Exception as exc:
-        logger.exception(
-            "ocr_page failed: job=%s page=%d: %s", job_id, page_num, exc
-        )
-        update_status(job_id, "FAILED", error_msg=f"Page {page_num}: {exc}")
+        if self.request.retries >= self.max_retries:
+            logger.exception(
+                "ocr_page failed permanently: job=%s page=%d: %s", job_id, page_num, exc
+            )
+            update_status(job_id, "FAILED", error_msg=f"Page {page_num}: {exc}")
+        else:
+            logger.warning(
+                "ocr_page failed (attempt %d/%d), will retry: job=%s page=%d: %s",
+                self.request.retries + 1, self.max_retries + 1, job_id, page_num, exc,
+            )
         raise
 
 
