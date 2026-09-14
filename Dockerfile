@@ -9,10 +9,10 @@ WORKDIR /app
 RUN groupadd -g 1000 appuser && useradd -u 1000 -g appuser -d /app -s /bin/sh appuser
 
 # Copy dependency manifest first for layer caching
-COPY pyproject.toml .
+COPY pyproject.toml uv.lock ./
 
-# Sync all dependencies into .venv
-RUN uv sync --no-dev
+# Sync all dependencies into .venv (--frozen: never re-resolve the lockfile)
+RUN uv sync --frozen --no-dev
 
 # Add virtualenv bin to PATH so gunicorn/celery are found
 ENV PATH="/app/.venv/bin:$PATH"
