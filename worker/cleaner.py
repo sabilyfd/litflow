@@ -1,9 +1,9 @@
 """
 Cleaner / merger module.
 
-merge(job_id):
-  1. Reads all page_*.txt in sorted order → concatenates → output.txt
-  2. Reads all page_*.html in sorted order → wraps in full HTML doc → output.html
+merge(job_id, lang_hint):
+  1. Reads all page_*.txt in numeric page order → concatenates → output.txt
+  2. Reads all page_*.html in numeric page order → wraps in full HTML doc → output.html
 
 The output.html wrapper includes minimal readable styling for serif fonts,
 right-to-left/auto direction, and per-page dividers.
@@ -15,17 +15,13 @@ import os
 import re
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 logger = logging.getLogger(__name__)
 
 JOBS_DIR = os.environ.get("JOBS_DIR", "/jobs")
 
 OUTPUT_HTML_TEMPLATE = """\
 <!DOCTYPE html>
-<html lang="bn" dir="auto">
+<html lang="{lang}" dir="auto">
 <head>
   <meta charset="UTF-8">
   <title>{title}</title>
@@ -48,13 +44,16 @@ def _page_number(path: Path) -> int:
     return int(match.group(1)) if match else 0
 
 
-def merge(job_id: str) -> None:
+def merge(job_id: str, lang_hint: str = "bn") -> None:
     """
     Merge per-page OCR outputs into a single output.txt and output.html.
 
     Reads from /jobs/{job_id}/pages/
     Writes to  /jobs/{job_id}/output.txt
                /jobs/{job_id}/output.html
+
+    lang_hint becomes the <html lang> attribute ("mixed"/unknown hints map
+    to "und"; direction stays dir="auto").
     """
     job_dir = Path(JOBS_DIR) / job_id
     pages_dir = job_dir / "pages"
@@ -99,8 +98,10 @@ def merge(job_id: str) -> None:
             html_parts.append(content)
 
     pages_block = "\n\n".join(html_parts)
+    html_lang = {"bn": "bn", "ar": "ar", "en": "en"}.get(lang_hint, "und")
     output_html = OUTPUT_HTML_TEMPLATE.format(
         title=_escape_html(title),
+        lang=html_lang,
         pages=pages_block,
     )
     (job_dir / "output.html").write_text(output_html, encoding="utf-8")

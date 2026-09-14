@@ -14,7 +14,14 @@ from flask import (
 )
 
 from web.auth import login_required
-from web.db import cancel_job, delete_job, get_job, get_page_artifacts
+from web.db import (
+    CANCELLABLE_STATUSES,
+    TERMINAL_STATUSES,
+    cancel_job,
+    delete_job,
+    get_job,
+    get_page_artifacts,
+)
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -22,9 +29,6 @@ JOBS_DIR = os.environ.get("JOBS_DIR", "/jobs")
 
 # Lightweight Celery client used only to revoke queued tasks
 _celery = Celery(broker=os.environ.get("REDIS_URL", "redis://redis:6379/0"))
-
-# Statuses that should stop the auto-refresh
-TERMINAL_STATUSES = {"DONE", "FAILED", "CANCELLED"}
 
 STATUS_COLORS = {
     "QUEUED": "gray",
@@ -80,7 +84,7 @@ def download_txt(job_id: str):
         abort(404)
     _authorize_job(job)
     if job["status"] != "DONE":
-        abort(404)
+        abort(409, description="Output is only available once the job is DONE.")
 
     path = os.path.join(JOBS_DIR, job_id, "output.txt")
     return send_file(path, as_attachment=True, download_name=f"{job_id}.txt")
@@ -94,10 +98,26 @@ def download_html(job_id: str):
         abort(404)
     _authorize_job(job)
     if job["status"] != "DONE":
-        abort(404)
+        abort(409, description="Output is only available once the job is DONE.")
 
     path = os.path.join(JOBS_DIR, job_id, "output.html")
     return send_file(path, as_attachment=True, download_name=f"{job_id}.html")
+
+
+@jobs_bp.route("/jobs/<job_id>/view/html")
+@login_required
+def view_html(job_id: str):
+    """Inline HTML output for the preview iframe — the download route above
+    sends Content-Disposition: attachment, which an iframe cannot render."""
+    job = get_job(job_id)
+    if job is None:
+        abort(404)
+    _authorize_job(job)
+    if job["status"] != "DONE":
+        abort(409, description="Output is only available once the job is DONE.")
+
+    path = os.path.join(JOBS_DIR, job_id, "output.html")
+    return send_file(path, mimetype="text/html")
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +195,7 @@ def preview(job_id: str):
         abort(404)
     _authorize_job(job)
     if job["status"] != "DONE":
-        abort(404)
+        abort(409, description="Preview is only available once the job is DONE.")
 
     return render_template(
         "job_preview.html",
@@ -194,15 +214,21 @@ def cancel(job_id: str):
         abort(404)
     _authorize_job(job)
 
-    if job["status"] not in ("QUEUED", "PROCESSING"):
-        flash("Only queued or processing jobs can be cancelled.", "error")
+    if job["status"] not in CANCELLABLE_STATUSES:
+        flash("Only queued, splitting or processing jobs can be cancelled.", "error")
         return redirect(url_for("jobs.job_status", job_id=job_id))
 
-    # Best-effort Celery revoke — task may already be running
-    try:
-        _celery.control.revoke(job_id, terminate=True, signal="SIGTERM")
-    except Exception:
-        pass
+    # Revoke the persisted Celery task id: the split task while it is queued,
+    # or the chord callback once pages are dispatched. Page tasks already
+    # running are not revoked individually — they observe the CANCELLED
+    # status and skip, and update_status's terminal guard keeps the job
+    # CANCELLED no matter what finishes afterwards.
+    task_id = job.get("celery_task_id")
+    if task_id:
+        try:
+            _celery.control.revoke(task_id, terminate=True, signal="SIGTERM")
+        except Exception:
+            pass
 
     if cancel_job(job_id):
         flash("Job cancelled.", "info")

@@ -15,7 +15,7 @@ from flask import (
 )
 
 from web.auth import login_required
-from web.db import create_job
+from web.db import create_job, set_celery_task_id
 
 upload_bp = Blueprint("upload", __name__)
 
@@ -67,14 +67,8 @@ def upload_file():
         flash("Only PDF files are accepted.", "error")
         return redirect(url_for("upload.upload_form"))
 
-    # --- Validate size ---
-    file.seek(0, 2)  # seek to end
-    file_size_mb = file.tell() / (1024 * 1024)
-    file.seek(0)
-
-    if file_size_mb > MAX_UPLOAD_MB:
-        flash(f"File exceeds the {MAX_UPLOAD_MB} MB limit.", "error")
-        return redirect(url_for("upload.upload_form"))
+    # (Size is enforced by MAX_CONTENT_LENGTH in app.py — Flask rejects
+    # oversized requests with 413 before this handler runs.)
 
     # --- Create job ---
     job_id = str(uuid.uuid4())
@@ -108,7 +102,9 @@ def upload_file():
         created_at=created_at,
     )
 
-    # Enqueue Celery task by name — no worker module import required
-    _celery.send_task("worker.tasks.split_pdf", args=[job_id])
+    # Enqueue Celery task by name — no worker module import required.
+    # Persist the task id so /jobs/<id>/cancel can revoke the queued split.
+    result = _celery.send_task("worker.tasks.split_pdf", args=[job_id])
+    set_celery_task_id(job_id, result.id)
 
     return redirect(url_for("jobs.job_status", job_id=job_id))

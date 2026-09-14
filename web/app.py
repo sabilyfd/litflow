@@ -1,17 +1,20 @@
 import os
 
 from dotenv import load_dotenv
-from flask import Flask
 
-from web.auth import auth_bp, init_oauth
-from web.cli import user_cli
-from web.db import init_db
-from web.routes.admin import admin_bp
-from web.routes.dashboard import dashboard_bp
-from web.routes.jobs import jobs_bp
-from web.routes.upload import upload_bp
-
+# Must run before the web.* imports below — web.db reads JOBS_DIR at import
+# time, and the .env file is the only source of it outside Docker.
 load_dotenv()
+
+from flask import Flask  # noqa: E402
+
+from web.auth import auth_bp, init_oauth  # noqa: E402
+from web.cli import user_cli  # noqa: E402
+from web.db import init_db  # noqa: E402
+from web.routes.admin import admin_bp  # noqa: E402
+from web.routes.dashboard import dashboard_bp  # noqa: E402
+from web.routes.jobs import jobs_bp  # noqa: E402
+from web.routes.upload import upload_bp  # noqa: E402
 
 
 def create_app() -> Flask:
@@ -60,4 +63,7 @@ def create_app() -> Flask:
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    # The Werkzeug debugger is remote code execution if exposed — opt in via
+    # FLASK_DEBUG=true and never behind a public interface.
+    debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    app.run(debug=debug, host="0.0.0.0", port=5000)

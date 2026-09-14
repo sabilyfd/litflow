@@ -4,10 +4,9 @@ Celery task definitions for the fan-out / fan-in OCR pipeline.
 Flow:
   1. split_pdf      — converts PDF to per-page PNGs, sets page_total,
                       dispatches a chord: group(ocr_page × N) | merge_job
-  2. ocr_page       — OCRs one page PNG, writes txt+html, increments page_done
+  2. ocr_page       — OCRs one page PNG (with retry/backoff), writes txt+html,
+                      increments page_done
   3. merge_job      — assembles output.txt + output.html, marks job DONE
-
-  (old run_pipeline kept as a stub for safety during rolling deploys)
 """
 
 import logging
@@ -16,7 +15,13 @@ from celery import chord, group
 
 from worker.celery_app import celery_app
 from worker import ocr, cleaner
-from web.db import increment_page_done, update_status
+from web.db import (
+    TERMINAL_STATUSES,
+    get_job,
+    increment_page_done,
+    set_celery_task_id,
+    update_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,26 +38,21 @@ def split_pdf(self, job_id: str) -> None:
     """
     logger.info("split_pdf starting for job %s", job_id)
     try:
+        job = get_job(job_id)
+        if job is None or job["status"] in TERMINAL_STATUSES:
+            logger.warning(
+                "split_pdf skipped for job %s (status=%s)",
+                job_id, job["status"] if job else "missing",
+            )
+            return
+
         update_status(job_id, "SPLITTING")
 
         page_total = ocr.split_pages(job_id)
 
         update_status(job_id, "PROCESSING", page_total=page_total, page_done=0)
 
-        # Read lang_hint from meta.json
-        import json
-        import os
-        from pathlib import Path
-        JOBS_DIR = os.environ.get("JOBS_DIR", "/jobs")
-        meta_path = Path(JOBS_DIR) / job_id / "meta.json"
-        lang_hint = "bn"
-        if meta_path.exists():
-            with open(meta_path, encoding="utf-8") as f:
-                meta = json.load(f)
-            lang_hint = meta.get("lang_hint", "bn")
-
-        from worker.ocr import LANG_MAP
-        langs = LANG_MAP.get(lang_hint, ["bn"])
+        langs = ocr.LANG_MAP.get(job["lang_hint"] or "bn", ["bn"])
 
         # Build chord: fan-out N page tasks → fan-in merge_job callback
         page_tasks = group(
@@ -60,6 +60,10 @@ def split_pdf(self, job_id: str) -> None:
             for page_num in range(1, page_total + 1)
         )
         pipeline = chord(page_tasks)(merge_job.s(job_id))
+        # Persist the chord callback id — /jobs/<id>/cancel revokes it to stop
+        # the merge from firing after a cancel (the upload route stores the
+        # split task id under the same column before this).
+        set_celery_task_id(job_id, pipeline.id)
         logger.info(
             "split_pdf dispatched chord for job %s: %d pages, chord id %s",
             job_id, page_total, pipeline.id,
@@ -93,6 +97,16 @@ def ocr_page(self, job_id: str, page_num: int, langs: list[str]) -> None:
     """
     logger.info("ocr_page starting: job=%s page=%d langs=%s", job_id, page_num, langs)
     try:
+        job = get_job(job_id)
+        if job is None or job["status"] in TERMINAL_STATUSES:
+            # Cancel/failed mid-run: skip the Document AI call instead of
+            # paying for a page whose result will never be read.
+            logger.info(
+                "ocr_page skipped: job=%s page=%d status=%s",
+                job_id, page_num, job["status"] if job else "missing",
+            )
+            return
+
         ocr.run_page(job_id, page_num, langs)
         increment_page_done(job_id)
         logger.info("ocr_page done: job=%s page=%d", job_id, page_num)
@@ -123,26 +137,19 @@ def merge_job(self, results: list, job_id: str) -> None:
     """
     logger.info("merge_job starting for job %s", job_id)
     try:
+        job = get_job(job_id)
+        if job is None or job["status"] in TERMINAL_STATUSES:
+            logger.info(
+                "merge_job skipped: job=%s status=%s",
+                job_id, job["status"] if job else "missing",
+            )
+            return
+
         update_status(job_id, "CLEANING")
-        cleaner.merge(job_id)
+        cleaner.merge(job_id, lang_hint=job["lang_hint"] or "bn")
         update_status(job_id, "DONE")
         logger.info("merge_job complete for job %s", job_id)
     except Exception as exc:
         logger.exception("merge_job failed for job %s: %s", job_id, exc)
         update_status(job_id, "FAILED", error_msg=str(exc))
         raise
-
-
-# ---------------------------------------------------------------------------
-# Legacy stub — kept so any in-flight tasks dispatched under the old name
-# don't crash the worker during a rolling restart.
-# ---------------------------------------------------------------------------
-
-@celery_app.task(bind=True, name="worker.tasks.run_pipeline")
-def run_pipeline(self, job_id: str) -> None:
-    """Deprecated: redirect to split_pdf for backwards compatibility."""
-    logger.warning(
-        "run_pipeline (deprecated) called for job %s — redirecting to split_pdf",
-        job_id,
-    )
-    split_pdf.apply_async(args=[job_id])

@@ -2,7 +2,6 @@ import os
 from functools import wraps
 
 from authlib.integrations.flask_client import OAuth
-from dotenv import load_dotenv
 from flask import (
     Blueprint,
     flash,
@@ -15,8 +14,6 @@ from flask import (
 
 from web.db import get_user
 from web.passwords import verify_password
-
-load_dotenv()
 
 auth_bp = Blueprint("auth", __name__)
 oauth = OAuth()

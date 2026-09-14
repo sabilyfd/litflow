@@ -1,24 +1,30 @@
 import os
 import sqlite3
-
-from dotenv import load_dotenv
-
-load_dotenv()
+from contextlib import closing
 
 JOBS_DIR = os.environ["JOBS_DIR"]
 DB_PATH = os.path.join(JOBS_DIR, "kitab.db")
+
+# A job in a terminal status is never rewritten (update_status, cancel_job) —
+# this is what stops a cancelled/failed job from resurrecting to DONE.
+TERMINAL_STATUSES = ("DONE", "FAILED", "CANCELLED")
+CANCELLABLE_STATUSES = ("QUEUED", "SPLITTING", "PROCESSING")
 
 
 def _get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # The same file is written by two gunicorn workers and the Celery worker;
+    # WAL + busy_timeout avoid spurious "database is locked" errors.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
 def init_db() -> None:
     """Create the jobs and users tables if they do not already exist."""
     os.makedirs(JOBS_DIR, exist_ok=True)
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS jobs (
@@ -32,7 +38,8 @@ def init_db() -> None:
                 page_done   INTEGER DEFAULT 0,
                 error_msg   TEXT,
                 created_at  TEXT,
-                updated_at  TEXT
+                updated_at  TEXT,
+                celery_task_id TEXT
             )
             """
         )
@@ -48,6 +55,10 @@ def init_db() -> None:
             )
             """
         )
+        # Pre-existing dev databases predate the task-id column.
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+        if "celery_task_id" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN celery_task_id TEXT")
         conn.commit()
 
 
@@ -64,7 +75,7 @@ def create_user(
     created_at: str,
 ) -> None:
     """Insert a local user. Raises sqlite3.IntegrityError if username exists."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
             """
             INSERT INTO users (username, password_hash, name, email, is_admin, created_at)
@@ -77,7 +88,7 @@ def create_user(
 
 def get_user(username: str) -> dict | None:
     """Return a local user row as a dict, or None."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         row = conn.execute(
             "SELECT * FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -86,7 +97,7 @@ def get_user(username: str) -> dict | None:
 
 def list_users() -> list[dict]:
     """Return all local users, oldest first."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         rows = conn.execute(
             "SELECT * FROM users ORDER BY created_at ASC"
         ).fetchall()
@@ -95,7 +106,7 @@ def list_users() -> list[dict]:
 
 def set_user_password(username: str, password_hash: str) -> bool:
     """Replace a local user's password hash. Returns True if a row changed."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         cur = conn.execute(
             "UPDATE users SET password_hash = ? WHERE username = ?",
             (password_hash, username),
@@ -106,7 +117,7 @@ def set_user_password(username: str, password_hash: str) -> bool:
 
 def delete_user(username: str) -> bool:
     """Delete a local user. Returns True if a row was removed."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
         conn.commit()
     return cur.rowcount > 0
@@ -121,7 +132,7 @@ def create_job(
     created_at: str,
 ) -> None:
     """Insert a new job row."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
             """
             INSERT INTO jobs (id, user_id, user_name, title, lang_hint, status, created_at, updated_at)
@@ -134,14 +145,14 @@ def create_job(
 
 def get_job(id: str) -> dict | None:
     """Return a single job as a dict, or None if not found."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (id,)).fetchone()
     return dict(row) if row else None
 
 
 def get_jobs_by_user(user_id: str) -> list[dict]:
     """Return all jobs belonging to a user, newest first."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         rows = conn.execute(
             "SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC", (user_id,)
         ).fetchall()
@@ -150,7 +161,7 @@ def get_jobs_by_user(user_id: str) -> list[dict]:
 
 def get_all_jobs() -> list[dict]:
     """Return all jobs in the system, newest first (admin use)."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         rows = conn.execute(
             "SELECT * FROM jobs ORDER BY created_at DESC"
         ).fetchall()
@@ -164,7 +175,12 @@ def update_status(
     page_total: int | None = None,
     error_msg: str | None = None,
 ) -> None:
-    """Update job status and optional progress / error fields."""
+    """Update job status and optional progress / error fields.
+
+    Terminal states are final: writes against a DONE/FAILED/CANCELLED job are
+    dropped, so a chord callback finishing after a cancel or page failure
+    cannot resurrect the job.
+    """
     from datetime import datetime, timezone
 
     updated_at = datetime.now(timezone.utc).isoformat()
@@ -182,12 +198,26 @@ def update_status(
         fields.append("error_msg = ?")
         values.append(error_msg)
 
+    placeholders = ", ".join("?" for _ in TERMINAL_STATUSES)
     values.append(id)
+    values.extend(TERMINAL_STATUSES)
 
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
-            f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?",
+            f"UPDATE jobs SET {', '.join(fields)} "
+            f"WHERE id = ? AND status NOT IN ({placeholders})",
             values,
+        )
+        conn.commit()
+
+
+def set_celery_task_id(id: str, task_id: str) -> None:
+    """Persist the job's current Celery task id (the split task, later the
+    chord callback id) so cancel can revoke a real task."""
+    with closing(_get_conn()) as conn:
+        conn.execute(
+            "UPDATE jobs SET celery_task_id = ? WHERE id = ?",
+            (task_id, id),
         )
         conn.commit()
 
@@ -195,14 +225,17 @@ def update_status(
 def increment_page_done(id: str) -> None:
     """Atomically increment page_done by 1 and update updated_at.
 
-    Safe to call from concurrent page-level Celery tasks.
+    Safe to call from concurrent page-level Celery tasks. MIN clamps the
+    count at page_total so redelivered tasks (task_acks_late) cannot push
+    progress past 100%.
     """
     from datetime import datetime, timezone
 
     updated_at = datetime.now(timezone.utc).isoformat()
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
-            "UPDATE jobs SET page_done = page_done + 1, updated_at = ? WHERE id = ?",
+            "UPDATE jobs SET page_done = MIN(page_done + 1, page_total),"
+            " updated_at = ? WHERE id = ?",
             (updated_at, id),
         )
         conn.commit()
@@ -264,14 +297,15 @@ def cancel_job(id: str) -> bool:
     from datetime import datetime, timezone
 
     updated_at = datetime.now(timezone.utc).isoformat()
-    with _get_conn() as conn:
+    placeholders = ", ".join("?" for _ in CANCELLABLE_STATUSES)
+    with closing(_get_conn()) as conn:
         cur = conn.execute(
-            """
+            f"""
             UPDATE jobs
                SET status = 'CANCELLED', updated_at = ?
-             WHERE id = ? AND status IN ('QUEUED', 'SPLITTING', 'PROCESSING')
+             WHERE id = ? AND status IN ({placeholders})
             """,
-            (updated_at, id),
+            (updated_at, id, *CANCELLABLE_STATUSES),
         )
         conn.commit()
     return cur.rowcount > 0
@@ -284,7 +318,7 @@ def delete_job(id: str) -> bool:
     """
     import shutil
 
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         cur = conn.execute(
             """
             DELETE FROM jobs

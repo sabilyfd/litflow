@@ -23,7 +23,7 @@
 
 <div class="rounded-xl overflow-hidden border border-gray-700 shadow-2xl bg-white" style="height: calc(100vh - 200px);">
   <iframe id="preview-frame"
-          src="{{ url_for('jobs.download_html', job_id=job.id) }}"
+          src="{{ url_for('jobs.view_html', job_id=job.id) }}"
           class="w-full h-full border-0"
           title="OCR output preview for {{ job.title or job.id }}">
   </iframe>

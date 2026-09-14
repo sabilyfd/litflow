@@ -26,7 +26,7 @@ def test_merge_orders_pages_numerically():
         )
 
     cleaner.JOBS_DIR = str(root)
-    cleaner.merge(job_id)
+    cleaner.merge(job_id, lang_hint="ar")
 
     job_dir = root / job_id
     txt = (job_dir / "output.txt").read_text(encoding="utf-8")
@@ -35,6 +35,7 @@ def test_merge_orders_pages_numerically():
     )
 
     html = (job_dir / "output.html").read_text(encoding="utf-8")
+    assert '<html lang="ar" dir="auto">' in html
     order = [html.index(f'data-page="{n}"') for n in (1, 2, 100, 101, 1000)]
     assert order == sorted(order)
 

@@ -78,6 +78,10 @@ def split_pages(job_id: str) -> int:
 
     Writes /jobs/{job_id}/pages/page_{n:03d}.png for every page.
     Returns the total page count.
+
+    Streams through poppler (output_folder + paths_only) so pages are written
+    to disk one at a time instead of materializing the whole book as PIL
+    images in memory.
     """
     job_dir = Path(JOBS_DIR) / job_id
     pdf_path = job_dir / "input.pdf"
@@ -87,15 +91,22 @@ def split_pages(job_id: str) -> int:
     from pdf2image import convert_from_path
 
     logger.info("Converting PDF to images (dpi=150): %s", pdf_path)
-    # dpi=150 keeps page images well under the Document AI 20 MB / 40 MP limit.
-    images = convert_from_path(str(pdf_path), dpi=150)
-    page_total = len(images)
+    rendered = convert_from_path(
+        str(pdf_path),
+        dpi=150,
+        output_folder=str(pages_dir),
+        fmt="png",
+        paths_only=True,
+    )
+    page_total = len(rendered)
 
-    for idx, img in enumerate(images):
-        page_num = idx + 1
-        img_path = pages_dir / f"page_{page_num:03d}.png"
-        img.save(str(img_path), format="PNG")
-        logger.info("Saved page image %d/%d → %s", page_num, page_total, img_path)
+    # pdf2image names files with a per-run uuid prefix; rename to the
+    # canonical page_{n:03d}.png names used by run_page() and the
+    # per-page artifacts API (returned paths are in page order).
+    for idx, src in enumerate(rendered):
+        dst = pages_dir / f"page_{idx + 1:03d}.png"
+        os.replace(src, dst)
+        logger.info("Saved page image %d/%d → %s", idx + 1, page_total, dst)
 
     return page_total
 
